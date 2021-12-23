@@ -10,6 +10,7 @@
 
 #include <SDL.h>
 #include <SDL_vulkan.h>
+#include <SDL_syswm.h>
 
 #include <vk_types.h>
 #include <vk_initializers.h>
@@ -22,6 +23,29 @@
 
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
+
+int watch_for_window_move(void* userData, SDL_Event* event)
+{
+	bool* _gameLoopInterrupted = (bool*)userData;
+
+	if (event->type == SDL_SYSWMEVENT)
+	{
+		SDL_SysWMmsg* sys_event = event->syswm.msg;
+#if defined (WIN32)
+
+		UINT message = sys_event->msg.win.msg;
+
+		switch (message)
+		{
+		case WM_ENTERSIZEMOVE: //these events only exist on newer windows
+		case WM_ENTERMENULOOP:
+			*_gameLoopInterrupted = true;
+			break;
+		}
+#endif
+	}
+	return 0;
+}
 
 void VulkanEngine::init()
 {
@@ -42,7 +66,10 @@ void VulkanEngine::init()
 		_windowExtent.height,
 		windowFlags
 	);
-	
+	SDL_EventFilter;
+	SDL_AddEventWatch(watch_for_window_move, &_gameLoopInterrupted); //We do this since windows (or SDL) locks out the main loop while a window is being dragged, even if no events are being passed.
+	SDL_EventState(SDL_SYSWMEVENT, SDL_ENABLE); //System specific to windows
+
 	init_vulkan();
 	init_swapchain();
 	init_commands();
@@ -1027,6 +1054,14 @@ void VulkanEngine::run()
 				quit = true;
 				break;
 			}
+		}
+		
+		if (_gameLoopInterrupted)
+		{
+			LOG_INFO("Game loop interrupted");
+			_gameLoopInterrupted = false;
+			lastUpdateStart = std::chrono::steady_clock::now();
+			continue;
 		}
 
 		auto trueElapsedNanoseconds = (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - lastUpdateStart).count();

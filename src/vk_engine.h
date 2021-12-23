@@ -27,6 +27,8 @@ public:
 
 	bool _isInitialized{ false };
 
+	bool _gameLoopInterrupted{ false };
+
 	VkExtent2D _windowExtent;
 
 	VkInstance _instance;
