@@ -51,6 +51,8 @@ struct FrameData {
 	AllocatedBuffer objectBuffer;
 	VkDescriptorSet objectDescriptorSet;
 
+	AllocatedBuffer indirectDrawBuffer;
+
 	VkSemaphore _presentSemaphore, _renderSemaphore;
 	VkFence _renderFence;
 

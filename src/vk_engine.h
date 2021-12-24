@@ -143,7 +143,7 @@ public:
 	void recreate_swap_chain();
 
 	void load_meshes();
-	void upload_mesh(Mesh& mesh);
+	void upload_mesh(Mesh& pMesh);
 
 	VkResult load_shader_module(const std::string filePath, VkShaderModule *outShaderModule);
 

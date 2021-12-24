@@ -66,7 +66,6 @@ void VulkanEngine::init()
 		_windowExtent.height,
 		windowFlags
 	);
-	SDL_EventFilter;
 	SDL_AddEventWatch(watch_for_window_move, &_gameLoopInterrupted); //We do this since windows (or SDL) locks out the main loop while a window is being dragged, even if no events are being passed.
 	SDL_EventState(SDL_SYSWMEVENT, SDL_ENABLE); //System specific to windows
 
@@ -128,10 +127,18 @@ void VulkanEngine::init_vulkan()
 		LOG_FATAL("SDL Surface failed to Initialize");
 	}
 
+	VkPhysicalDeviceFeatures feats{};
+	feats.multiDrawIndirect = true;
+	
+	VkPhysicalDeviceVulkan11Features v11feats{};
+	v11feats.shaderDrawParameters = true;
+
 	vkb::PhysicalDeviceSelector selector{ vkbInstance };
 	auto physicalDeviceSelectResult = selector
-		.set_minimum_version(1, 1)
+		.set_minimum_version(1, 2)
 		.set_surface(_surface)
+		.set_required_features(feats)
+		.set_required_features_11(v11feats)
 		.select();
 
 	VKB_CHECK(physicalDeviceSelectResult);
@@ -143,9 +150,9 @@ void VulkanEngine::init_vulkan()
 	VkPhysicalDeviceShaderDrawParametersFeatures shaderDrawParameters{};
 	shaderDrawParameters.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES;
 	shaderDrawParameters.pNext = nullptr;
-
+	
 	shaderDrawParameters.shaderDrawParameters = true;
-
+	
 	deviceBuilder.add_pNext(&shaderDrawParameters);
 
 	auto deviceBuildResult = deviceBuilder.build();
@@ -569,9 +576,9 @@ void VulkanEngine::load_meshes()
 	_meshes["triangle"] = std::make_shared<Mesh>(triangleMesh);
 }
 
-void VulkanEngine::upload_mesh(Mesh& mesh)
+void VulkanEngine::upload_mesh(Mesh& pMesh)
 {
-	const auto bufferSize = mesh._vertices.size() * sizeof(Vertex);
+	const auto bufferSize = pMesh._vertices.size() * sizeof(Vertex);
 
 	//Create and write to staging buffer that stores mesh data CPU side before transfering
 
@@ -589,7 +596,7 @@ void VulkanEngine::upload_mesh(Mesh& mesh)
 
 	void* data;
 	vmaMapMemory(_vmaAllocator, stagingBuffer._allocation, &data);
-	memcpy(data, mesh._vertices.data(), bufferSize);
+	memcpy(data, pMesh._vertices.data(), bufferSize);
 	vmaUnmapMemory(_vmaAllocator, stagingBuffer._allocation);
 
 	//Create GPU side buffer that will store the mesh data
@@ -602,18 +609,18 @@ void VulkanEngine::upload_mesh(Mesh& mesh)
 
 	vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-	VK_CHECK(vmaCreateBuffer(_vmaAllocator, &vertexBufferInfo, &vmaallocInfo, &mesh._vertexBuffer._buffer, &mesh._vertexBuffer._allocation, nullptr));
+	VK_CHECK(vmaCreateBuffer(_vmaAllocator, &vertexBufferInfo, &vmaallocInfo, &pMesh._vertexBuffer._buffer, &pMesh._vertexBuffer._allocation, nullptr));
 
 	immediate_submit([=](VkCommandBuffer commandBuffer) {
 		VkBufferCopy copy;
 		copy.dstOffset = 0;
 		copy.srcOffset = 0;
 		copy.size = bufferSize;
-		vkCmdCopyBuffer(commandBuffer, stagingBuffer._buffer, mesh._vertexBuffer._buffer, 1, &copy);
+		vkCmdCopyBuffer(commandBuffer, stagingBuffer._buffer, pMesh._vertexBuffer._buffer, 1, &copy);
 		});
 
 	_mainDeletionStack.push_function([=]() {
-		vmaDestroyBuffer(_vmaAllocator, mesh._vertexBuffer._buffer, mesh._vertexBuffer._allocation); //ok
+		vmaDestroyBuffer(_vmaAllocator, pMesh._vertexBuffer._buffer, pMesh._vertexBuffer._allocation); //ok
 		});
 
 	//Destroy this now or else it is a leak
@@ -778,10 +785,22 @@ void VulkanEngine::init_descriptors()
 	for (int i = 0; i < FRAME_OVERLAP; i++)
 	{
 		constexpr uint64_t MAX_OBJECTS = 10000;
+		constexpr uint32_t MAX_COMMANDS = 10000; //One command for each object before we have instancing
 
-		_frames[i].objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		_frames[i].objectBuffer = create_buffer(
+			sizeof(GPUObjectData) * MAX_OBJECTS, 
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, 
+			VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-		_frames[i].cameraBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		_frames[i].cameraBuffer = create_buffer(
+			sizeof(GPUCameraData), 
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+			VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+		_frames[i].indirectDrawBuffer = create_buffer(
+			MAX_COMMANDS * sizeof(VkDrawIndexedIndirectCommand), 
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, 
+			VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 		//Allocate the descriptor sets
 
@@ -1183,17 +1202,60 @@ std::shared_ptr<Mesh> VulkanEngine::get_mesh(const std::string& name)
 	}
 }
 
+
+struct IndirectBatch {
+	std::shared_ptr<Mesh> pMesh;
+	std::shared_ptr<Material> pMaterial;
+	uint32_t first; //Index into the object buffer
+	uint32_t count;
+};
+std::vector<IndirectBatch> compact_draws(const std::vector<RenderObject>& objects)
+{
+	std::vector<IndirectBatch> draws;
+
+	IndirectBatch firstDraw;
+	firstDraw.pMesh = objects[0].pMesh;
+	firstDraw.pMaterial = objects[0].pMaterial;
+	firstDraw.first = 0;
+	firstDraw.count = 1;
+
+	draws.push_back(firstDraw);
+
+	for (int i = 0; i < objects.size(); i++)
+	{
+		bool sameMesh = (objects[i].pMesh == draws.back().pMesh);
+		bool sameMaterial = (objects[i].pMaterial == draws.back().pMaterial);
+
+		if (sameMesh && sameMaterial)
+		{
+			draws.back().count++;
+		}
+		else
+		{
+			IndirectBatch newDraw;
+			newDraw.pMesh = objects[i].pMesh;
+			newDraw.pMaterial = objects[i].pMaterial;
+			newDraw.first = i;
+			newDraw.count = 1;
+
+			draws.push_back(newDraw);
+		}
+	}
+	return draws;
+}
+
 void VulkanEngine::draw_objects(VkCommandBuffer commandBuffer, const std::vector<RenderObject>& renderables)
 {
+	FrameData& currentFrame = get_current_frame();
 
 	//Camera
 	GPUCameraData camData;
 	camData.viewproj = _playerCamera.get_projview_matrix((float)_windowExtent.width / (float)_windowExtent.height);
 
 	void* data;
-	vmaMapMemory(_vmaAllocator, get_current_frame().cameraBuffer._allocation, &data);
+	vmaMapMemory(_vmaAllocator, currentFrame.cameraBuffer._allocation, &data);
 	memcpy(data, &camData, sizeof(GPUCameraData));
-	vmaUnmapMemory(_vmaAllocator, get_current_frame().cameraBuffer._allocation);
+	vmaUnmapMemory(_vmaAllocator, currentFrame.cameraBuffer._allocation);
 
 	//Environment
 
@@ -1201,7 +1263,7 @@ void VulkanEngine::draw_objects(VkCommandBuffer commandBuffer, const std::vector
 	_sceneParameters.ambientColor = { sin(framed), 0, cos(framed), 1 };
 
 	char* sceneData;
-	vmaMapMemory(_vmaAllocator, _sceneParameterBuffer._allocation, (void**)&sceneData);
+	VK_CHECK(vmaMapMemory(_vmaAllocator, _sceneParameterBuffer._allocation, (void**)&sceneData));
 
 	int frameIndex = _frameNumber % FRAME_OVERLAP;
 
@@ -1213,8 +1275,9 @@ void VulkanEngine::draw_objects(VkCommandBuffer commandBuffer, const std::vector
 
 	//Objects
 
+	//Write the renderables into the objectdata buffer
 	void* objectData;
-	vmaMapMemory(_vmaAllocator, get_current_frame().objectBuffer._allocation, &objectData);
+	VK_CHECK(vmaMapMemory(_vmaAllocator, currentFrame.objectBuffer._allocation, &objectData));
 
 	GPUObjectData* objectSSBO = (GPUObjectData*)objectData;
 
@@ -1225,40 +1288,56 @@ void VulkanEngine::draw_objects(VkCommandBuffer commandBuffer, const std::vector
 		objectSSBO[i].color = object.color;
 	}
 
-	vmaUnmapMemory(_vmaAllocator, get_current_frame().objectBuffer._allocation);
+	vmaUnmapMemory(_vmaAllocator, currentFrame.objectBuffer._allocation);
 
-	std::shared_ptr<Mesh> pLastMesh = nullptr;
-	std::shared_ptr<Material> pLastMaterial = nullptr; //this seems dumb
+	//Write a drawcommand for every renderable
+	void* drawCommandData;
+	vmaMapMemory(_vmaAllocator, currentFrame.indirectDrawBuffer._allocation, &drawCommandData);
+
+	VkDrawIndirectCommand* drawCommands = (VkDrawIndirectCommand*)drawCommandData;
+
 	for (int i = 0; i < renderables.size(); i++)
 	{
 		const RenderObject& object = renderables[i];
+		
+		drawCommands[i].vertexCount = object.pMesh->_vertices.size();
+		drawCommands[i].instanceCount = 1;
+		drawCommands[i].firstVertex = 0;
+		drawCommands[i].firstInstance = i;
+	}
 
-		if (object.pMaterial != pLastMaterial) {
-			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.pMaterial->pipeline);
-			pLastMaterial = object.pMaterial;
+	vmaUnmapMemory(_vmaAllocator, currentFrame.indirectDrawBuffer._allocation);
+
+	std::shared_ptr<Mesh> pLastMesh = nullptr;
+	std::shared_ptr<Material> pLastMaterial = nullptr;
+
+	std::vector<IndirectBatch> draws = compact_draws(renderables);
+	for (IndirectBatch& draw : draws)
+	{
+		if (draw.pMaterial != pLastMaterial) {
+			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.pMaterial->pipeline);
+			pLastMaterial = draw.pMaterial;
 
 			uint32_t sceneDataUniformOffset = pad_uniform_buffer_size(sizeof(GPUSceneParameters)) * frameIndex;
 
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.pMaterial->pipelineLayout, 0, 1, &get_current_frame().globalDescriptorSet, 1, &sceneDataUniformOffset);
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.pMaterial->pipelineLayout, 1, 1, &get_current_frame().objectDescriptorSet, 0, nullptr);
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.pMaterial->pipelineLayout, 0, 1, &get_current_frame().globalDescriptorSet, 1, &sceneDataUniformOffset);
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.pMaterial->pipelineLayout, 1, 1, &get_current_frame().objectDescriptorSet, 0, nullptr);
 
-			if (object.pMaterial->textureSet != VK_NULL_HANDLE) {
-				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, object.pMaterial->pipelineLayout, 2, 1, &object.pMaterial->textureSet, 0, nullptr);
+			if (draw.pMaterial->textureSet != VK_NULL_HANDLE) {
+				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, draw.pMaterial->pipelineLayout, 2, 1, &draw.pMaterial->textureSet, 0, nullptr);
 			}
 		}
 
-		MeshPushConstants constants;
-		constants.render_matrix = object.transform;
-
-		vkCmdPushConstants(commandBuffer, object.pMaterial->pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(MeshPushConstants), &constants);
-
-		if (object.pMesh != pLastMesh) {
+		if (draw.pMesh != pLastMesh) {
 			VkDeviceSize offset = 0;
-			vkCmdBindVertexBuffers(commandBuffer, 0, 1, &object.pMesh->_vertexBuffer._buffer, &offset);
-			pLastMesh = object.pMesh;
+			vkCmdBindVertexBuffers(commandBuffer, 0, 1, &draw.pMesh->_vertexBuffer._buffer, &offset);
+			pLastMesh = draw.pMesh;
 		}
 
-		vkCmdDraw(commandBuffer, object.pMesh->_vertices.size(), 1, 0, i);
+		VkDeviceSize indirect_offset = draw.first * sizeof(VkDrawIndirectCommand);
+		VkDeviceSize draw_stride = sizeof(VkDrawIndirectCommand);
+
+		vkCmdDrawIndirect(commandBuffer, currentFrame.indirectDrawBuffer._buffer, indirect_offset, draw.count, draw_stride);
 	}
 }
 
