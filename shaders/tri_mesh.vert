@@ -1,4 +1,5 @@
 #version 460
+#extension GL_KHR_vulkan_glsl : enable
 
 layout (location = 0) in vec3 vPosition;
 layout (location = 1) in vec3 vNormal;
@@ -22,17 +23,11 @@ layout(std140, set = 1, binding = 0) readonly buffer ObjectBuffer{
 	ObjectData objects[];
 } objectBuffer;
 
-layout( push_constant ) uniform constants //Unused
-{
-	vec4 data;
-	mat4 render_matrix;
-} PushConstants;
-
 void main()
 {
-	mat4 modelMatrix = objectBuffer.objects[gl_BaseInstance].model;
+	mat4 modelMatrix = objectBuffer.objects[gl_InstanceIndex].model;
 	mat4 transformMatrix = (cameraData.viewproj * modelMatrix);
 	gl_Position = transformMatrix * vec4(vPosition, 1.0f);
-	outColor = objectBuffer.objects[gl_BaseInstance].color.xyz;
+	outColor = objectBuffer.objects[gl_InstanceIndex].color.xyz;
 	texCoord = vTexCoord;
 }
