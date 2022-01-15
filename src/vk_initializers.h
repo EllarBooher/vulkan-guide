@@ -30,6 +30,7 @@ namespace vkinit {
 
 	VkDescriptorSetLayoutBinding descriptorset_layout_binding(VkDescriptorType type, VkShaderStageFlagBits stageFlags, uint32_t binding);
 
+	VkWriteDescriptorSet write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet dstSet, const VkDescriptorBufferInfo& bufferInfo, uint32_t binding);
 	VkWriteDescriptorSet write_descriptor_image(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorImageInfo& imageInfo, uint32_t binding);
 	VkWriteDescriptorSet write_descriptorset(VkDescriptorType type, VkDescriptorSet dstSet, const VkDescriptorBufferInfo& bufferInfo, uint32_t binding);
 }

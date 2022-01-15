@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vk_types.h"
+#include "vk_buffers.h"
 #include <vector>
 #include <glm/vec3.hpp>
 #include <string>
@@ -18,7 +19,7 @@ struct Vertex {
 
 struct Mesh {
 	std::vector<Vertex> _vertices;
-	AllocatedBuffer _vertexBuffer;
+	vkutil::AllocatedBuffer _vertexBuffer;
 
 	static bool load_from_triangulated_obj(const std::string& filename, Mesh& mesh);
 };

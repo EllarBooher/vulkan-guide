@@ -4,9 +4,12 @@
 #pragma once
 
 #include "vk_types.h"
+#include "vk_frame.h"
 #include "vk_mesh.h"
+#include "vk_descriptors.h"
 #include "player_camera.h"
 #include "VkBootstrap.h"
+#include "vk_buffers.h"
 
 #include "input_manager.h"
 
@@ -73,7 +76,9 @@ public:
 	//Scene Management
 
 	GPUSceneParameters _sceneParameters;
-	AllocatedBuffer _sceneParameterBuffer;
+	
+	vkutil::WriteBuffer _sceneBuffer;
+	vkutil::WriteBuffer _cameraBuffer;
 
 	std::vector<RenderObject> _renderables;
 	std::unordered_map<std::string, std::shared_ptr<Material>> _materials;
@@ -83,6 +88,11 @@ public:
 	std::shared_ptr<Material> get_material(const std::string& name);
 	std::shared_ptr<Mesh> get_mesh(const std::string& name);
 
+	//Descriptors
+
+	DescriptorSetAllocator _descriptorAllocator;
+	DescriptorSetLayoutCache _descriptorSetLayoutCache;
+
 	//Depth buffer
 
 	VkFormat _depthFormat;
@@ -91,28 +101,31 @@ public:
 
 	//Buffers
 
-	VkDescriptorSetLayout _globalSetLayout;
-	VkDescriptorSetLayout _objectSetLayout;
 	VkDescriptorSetLayout _singleTextureSetLayout;
-	VkDescriptorPool _descriptorPool;
 
 	//GPU Memory
 
 	UploadContext _meshUploadContext;
 
+	/// <summary>
+	/// Immediately runs a command on a command buffer that is locally allocated and cleaned up.
+	/// </summary>
 	void immediate_submit(std::function<void(VkCommandBuffer commandBuffer)>&& function);
 
 	//Memory Allocation
 
-	size_t pad_uniform_buffer_size(size_t originalSize);
-
 	VmaAllocator _vmaAllocator;
-
-	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, bool manualDisposal = false);
 
 	//Cleanup
 
+	/// <summary>
+	/// Cleanup methods run upon closing the program. Ends up destroying the VkInstance and VkDevice.
+	/// </summary>
 	DeletionStack _mainDeletionStack;
+
+	/// <summary>
+	/// Cleanup methods run when the swapchain is rebuilt.
+	/// </summary>
 	DeletionStack _swapChainDeletionStack;
 
 	//Controls
@@ -126,7 +139,6 @@ public:
 
 	void load_images();
 
-	//draw loop
 	void draw();
 
 	void init_vulkan();
@@ -148,23 +160,6 @@ public:
 	VkResult load_shader_module(const std::string filePath, VkShaderModule *outShaderModule);
 
 	void draw_objects(VkCommandBuffer commandBuffer, const std::vector<RenderObject>& renderables);
-};
-
-class PipelineBuilder {
-public:
-	std::vector<VkPipelineShaderStageCreateInfo> _shaderStages;
-	VkPipelineVertexInputStateCreateInfo _vertexInputState = {};
-	VkPipelineInputAssemblyStateCreateInfo _inputAssembly = {};
-	VkViewport _viewport = {};
-	VkRect2D _scissor = {};
-	VkPipelineRasterizationStateCreateInfo _rasterizer = {};
-	VkPipelineColorBlendAttachmentState _colorBlendAttachment = {};
-	VkPipelineDepthStencilStateCreateInfo _depthStencil = {};
-
-	VkPipelineMultisampleStateCreateInfo _multisampling = {};
-	VkPipelineLayout _pipelineLayout = {};
-
-	VkResult build_pipeline(VkDevice device, VkRenderPass pass, VkPipeline* pipeline);
 };
 
 class fastrng {

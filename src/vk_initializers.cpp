@@ -266,6 +266,21 @@ VkWriteDescriptorSet vkinit::write_descriptor_image(VkDescriptorType type, VkDes
 	return write;
 }
 
+VkWriteDescriptorSet vkinit::write_descriptor_buffer(VkDescriptorType type, VkDescriptorSet dstSet, const VkDescriptorBufferInfo& bufferInfo, uint32_t binding)
+{
+	VkWriteDescriptorSet write{};
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.pNext = nullptr;
+
+	write.dstBinding = binding;
+	write.dstSet = dstSet;
+	write.descriptorCount = 1;
+	write.descriptorType = type;
+	write.pBufferInfo = &bufferInfo;
+
+	return write;
+}
+
 VkWriteDescriptorSet vkinit::write_descriptorset(VkDescriptorType type, VkDescriptorSet dstSet, const VkDescriptorBufferInfo& bufferInfo, uint32_t binding)
 {
 	VkWriteDescriptorSet write{};

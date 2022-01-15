@@ -5,6 +5,8 @@
 #include "logger.h"
 
 #include "vk_initializers.h"
+#include "vk_buffers.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -22,7 +24,12 @@ bool vkutil::load_image_from_file(VulkanEngine& engine, std::string fileName, Al
 	size_t imageSize = textureWidth * textureHeight * 4; //size of texture-to-be in bytes
 	VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB; //match STB RGBA
 
-	AllocatedBuffer stagingBuffer = engine.create_buffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY, true);
+	AllocatedBuffer stagingBuffer = AllocatedBuffer::create(
+		imageSize, 
+		engine._vmaAllocator,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+		VMA_MEMORY_USAGE_CPU_ONLY, 
+		nullptr);
 
 	void* data;
 	VK_CHECK(vmaMapMemory(engine._vmaAllocator, stagingBuffer._allocation, &data));

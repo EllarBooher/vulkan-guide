@@ -15,8 +15,15 @@ add_executable(vulkan_guide
     "vk_textures.cpp" 
     "player_camera.h" 
     "player_camera.cpp" 
-     "logger.h")
-
+    "logger.h" 
+    "vk_shaders.cpp" 
+    "vk_shaders.h" 
+    "vk_descriptors.h" 
+    "vk_descriptors.cpp" 
+    "vk_pipelines.h" 
+    "vk_pipelines.cpp" 
+    "vk_buffers.h" 
+    "vk_frame.h" "vk_buffers.cpp")
 
 set_property(TARGET vulkan_guide PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:vulkan_guide>")
 

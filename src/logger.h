@@ -19,7 +19,7 @@
 	}
 #define LOG_VKRESULT(result) { \
 		logger::print_time(); \
-		logger::print("VkResult encountered: {}", result); \
+		logger::print("VkResult: {}", result); \
 	}
 
 #define LOG_FATAL(message,...) logger::log_fatal(message, ##__VA_ARGS__);
@@ -56,10 +56,6 @@ namespace logger
 
 		fmt::print("[{:<12%H:%M:%S}]", now - start, 1);
 	}
-	inline static void print_code_location()
-	{
-		fmt::print("[Line {} in {}]", __LINE__, __FILE__);
-	}
 
 	template <typename... Args>
 	inline static void log_fatal(std::string_view message, Args... args)
@@ -67,8 +63,6 @@ namespace logger
 		print_time();
 		fmt::print(fg(fmt::color::crimson) | fmt::emphasis::bold, _log_tag_format, "[FATAL]");
 		print(message, args...);
-
-		print_code_location();
 	}
 	template <typename... Args>
 	inline static void log_error(std::string_view message, Args... args)
@@ -77,13 +71,11 @@ namespace logger
 		fmt::print(fg(fmt::color::crimson), _log_tag_format, "[ERROR]");
 		print(message, args...);
 
-		print_code_location();
 	}
 	template <typename... Args>
 	inline static void log_warning(std::string_view message, Args... args)
 	{
 		print_time();
-		print_code_location();
 		fmt::print(fg(fmt::color::yellow), _log_tag_format, "[WARNING]");
 		print(message, args...);
 	}
@@ -106,7 +98,7 @@ namespace logger
 	{
 		if (result != VK_SUCCESS)
 		{
-			LOG_VKRESULT(result);
+			log_error("Failed VkResult: {}", result);
 		}
 	}
 	inline static void vk_checks(std::vector<VkResult> results)
@@ -116,8 +108,7 @@ namespace logger
 			auto result = results[i];
 			if (result == VK_SUCCESS) continue;
 
-			LOG_ERROR("Failed VkResult at position {}", i);
-			LOG_VKRESULT(result);
+			log_error("Failed VkResult: {}", result);
 		}
 	}
 }

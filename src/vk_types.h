@@ -4,7 +4,9 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+
 #include "vk_mem_alloc.h"
+
 #include "glm/glm.hpp"
 
 #include <vector>
@@ -16,11 +18,6 @@
 //we will add our main reusable types here
 
 struct Mesh;
-
-struct AllocatedBuffer {
-	VkBuffer _buffer;
-	VmaAllocation _allocation;
-};
 
 struct AllocatedImage {
 	VkImage _image;
@@ -42,22 +39,6 @@ struct GPUSceneParameters {
 struct GPUObjectData {
 	glm::mat4 modelMatrix;
 	glm::vec4 color;
-};
-
-struct FrameData {
-	AllocatedBuffer cameraBuffer;
-	VkDescriptorSet globalDescriptorSet;
-
-	AllocatedBuffer objectBuffer;
-	VkDescriptorSet objectDescriptorSet;
-
-	AllocatedBuffer indirectDrawBuffer;
-
-	VkSemaphore _presentSemaphore, _renderSemaphore;
-	VkFence _renderFence;
-
-	VkCommandPool _commandPool;
-	VkCommandBuffer _mainCommandBuffer;
 };
 
 struct DeletionStack {

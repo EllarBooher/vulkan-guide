@@ -29,5 +29,6 @@ void main()
 	mat4 transformMatrix = (cameraData.viewproj * modelMatrix);
 	gl_Position = transformMatrix * vec4(vPosition, 1.0f);
 	outColor = objectBuffer.objects[gl_InstanceIndex].color.xyz;
+
 	texCoord = vTexCoord;
 }
