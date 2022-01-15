@@ -142,10 +142,14 @@ public:
 	void draw();
 
 	void init_vulkan();
+
 	void init_swapchain();
 	void init_commands();
 	void init_sync_structures();
 	void init_default_renderpass(const vkb::Swapchain& swapchain);
+
+	void init_imgui();
+
 	void init_framebuffers();
 	void init_descriptors();
 	void init_pipelines();
